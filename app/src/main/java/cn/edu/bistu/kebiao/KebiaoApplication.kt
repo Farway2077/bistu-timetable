@@ -5,6 +5,7 @@ import androidx.room.Room
 import cn.edu.bistu.kebiao.data.ScheduleRepository
 import cn.edu.bistu.kebiao.data.local.AppDatabase
 import cn.edu.bistu.kebiao.data.local.MIGRATION_1_2
+import cn.edu.bistu.kebiao.data.local.MIGRATION_2_3
 
 class KebiaoApplication : Application() {
     val database: AppDatabase by lazy {
@@ -13,7 +14,7 @@ class KebiaoApplication : Application() {
             AppDatabase::class.java,
             "kebiao.db",
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
     }
 

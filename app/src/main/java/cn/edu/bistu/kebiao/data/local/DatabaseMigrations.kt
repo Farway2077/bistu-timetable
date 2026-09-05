@@ -3,6 +3,24 @@ package cn.edu.bistu.kebiao.data.local
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS study_tasks (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                courseName TEXT NOT NULL,
+                dueAt TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                completed INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+    }
+}
+
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE courses ADD COLUMN source TEXT NOT NULL DEFAULT 'IMPORTED'")

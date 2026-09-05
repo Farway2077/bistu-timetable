@@ -11,8 +11,9 @@ import androidx.room.RoomDatabase
         ScheduleOverrideEntity::class,
         ScheduleExceptionEntity::class,
         ImportSnapshotEntity::class,
+        StudyTaskEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

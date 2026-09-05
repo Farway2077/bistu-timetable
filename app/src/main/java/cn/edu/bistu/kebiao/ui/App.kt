@@ -12,6 +12,8 @@ import cn.edu.bistu.kebiao.ui.importer.ImportScreen
 import cn.edu.bistu.kebiao.ui.importer.ImportViewModel
 import cn.edu.bistu.kebiao.ui.timetable.TimetableScreen
 import cn.edu.bistu.kebiao.ui.timetable.TimetableViewModel
+import cn.edu.bistu.kebiao.ui.study.StudyToolsScreen
+import cn.edu.bistu.kebiao.ui.study.StudyToolsViewModel
 
 @Composable
 fun KebiaoApp(repository: ScheduleRepository) {
@@ -25,7 +27,12 @@ fun KebiaoApp(repository: ScheduleRepository) {
                 viewModel = viewModel,
                 onImport = { navController.navigate("import") },
                 onManageSchedule = { navController.navigate("schedule-editor") },
+                onOpenStudyTools = { navController.navigate("study-tools") },
             )
+        }
+        composable("study-tools") {
+            val viewModel: StudyToolsViewModel = viewModel(factory = StudyToolsViewModel.factory(repository))
+            StudyToolsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
         }
         composable("import") {
             val viewModel: ImportViewModel = viewModel(

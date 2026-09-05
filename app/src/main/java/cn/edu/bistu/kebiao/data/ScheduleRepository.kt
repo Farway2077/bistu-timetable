@@ -7,6 +7,8 @@ import cn.edu.bistu.kebiao.data.local.ScheduleDao
 import cn.edu.bistu.kebiao.data.local.ScheduleExceptionEntity
 import cn.edu.bistu.kebiao.data.local.ScheduleOverrideEntity
 import cn.edu.bistu.kebiao.data.local.SemesterEntity
+import cn.edu.bistu.kebiao.data.local.toEntity
+import cn.edu.bistu.kebiao.domain.StudyTask
 import cn.edu.bistu.kebiao.domain.Course
 import cn.edu.bistu.kebiao.domain.CourseSource
 import cn.edu.bistu.kebiao.domain.ImportedSchedule
@@ -34,6 +36,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class ScheduleRepository(private val dao: ScheduleDao) {
+    val studyTasks: Flow<List<StudyTask>> = dao.observeStudyTasks().map { rows -> rows.map { it.toDomain() } }
+
+    suspend fun saveStudyTask(task: StudyTask) = dao.upsertStudyTask(task.validated().toEntity())
+
+    suspend fun setStudyTaskCompleted(id: String, completed: Boolean) = dao.setStudyTaskCompleted(id, completed)
+
+    suspend fun deleteStudyTask(id: String) = dao.deleteStudyTask(id)
+
     private val writeMutex = Mutex()
     private val semesterEntities = dao.observeLatestSemester()
     private val meetingRows = dao.observeLatestMeetingRows()

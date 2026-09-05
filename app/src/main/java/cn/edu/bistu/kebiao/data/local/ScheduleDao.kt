@@ -9,6 +9,18 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 abstract class ScheduleDao {
+    @Query("SELECT * FROM study_tasks ORDER BY completed, dueAt, title, id")
+    abstract fun observeStudyTasks(): Flow<List<StudyTaskEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertStudyTask(task: StudyTaskEntity)
+
+    @Query("UPDATE study_tasks SET completed = :completed WHERE id = :id")
+    abstract suspend fun setStudyTaskCompleted(id: String, completed: Boolean)
+
+    @Query("DELETE FROM study_tasks WHERE id = :id")
+    abstract suspend fun deleteStudyTask(id: String)
+
     @Query("SELECT * FROM semesters ORDER BY updated_at DESC LIMIT 1")
     abstract fun observeLatestSemester(): Flow<SemesterEntity?>
 

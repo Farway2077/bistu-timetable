@@ -133,6 +133,7 @@ fun TimetableScreen(
     viewModel: TimetableViewModel,
     onImport: () -> Unit,
     onManageSchedule: () -> Unit,
+    onOpenStudyTools: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
     val appContext = LocalContext.current.applicationContext
@@ -149,6 +150,7 @@ fun TimetableScreen(
         onThisWeek = viewModel::goToThisWeek,
         onImport = onImport,
         onManageSchedule = onManageSchedule,
+        onOpenStudyTools = onOpenStudyTools,
         onUndoImport = viewModel::undoLastImport,
         onStartDateChange = viewModel::updateSemesterStartDate,
         cardTextSize = cardTextSize,
@@ -185,8 +187,17 @@ private fun TimetableContent(
     onCardTextSizeChange: (CourseCardTextSize) -> Unit,
     initialMode: TimetableViewMode = TimetableViewMode.WEEK,
     previewNow: LocalDateTime? = null,
+    onOpenStudyTools: () -> Unit = {},
 ) {
     Scaffold(
+        bottomBar = {
+            Surface(tonalElevation = 2.dp) {
+                TextButton(
+                    onClick = onOpenStudyTools,
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                ) { Text("学习助手 · 作业考试 / 查课 / 空闲节次") }
+            }
+        },
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
