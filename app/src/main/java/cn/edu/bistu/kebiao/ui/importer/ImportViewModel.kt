@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import cn.edu.bistu.kebiao.data.ScheduleRepository
 import cn.edu.bistu.kebiao.domain.ImportedLesson
 import cn.edu.bistu.kebiao.domain.ImportedSchedule
+import cn.edu.bistu.kebiao.domain.ScheduleDiff
 import cn.edu.bistu.kebiao.domain.Semester
 import cn.edu.bistu.kebiao.importer.BistuPageExtractor
 import cn.edu.bistu.kebiao.importer.TimetableTextParser
@@ -23,9 +24,10 @@ import kotlinx.coroutines.withContext
 data class ImportUiState(
     val currentUrl: String = BistuPageExtractor.START_URL,
     val isAnalyzing: Boolean = false,
-    val message: String = "请在学校页面完成登录，然后进入“我的课表”。",
+    val message: String = "请在学校页面完成登录，然后进入“当前课表”。",
     val warnings: List<String> = emptyList(),
     val pendingSchedule: ImportedSchedule? = null,
+    val pendingDiff: ScheduleDiff? = null,
     val isSaving: Boolean = false,
     val saved: Boolean = false,
 )
@@ -47,6 +49,8 @@ class ImportViewModel(
                 isAnalyzing = true,
                 message = "正在读取完整学期课表…",
                 warnings = emptyList(),
+                pendingSchedule = null,
+                pendingDiff = null,
             )
         }
     }
@@ -71,39 +75,59 @@ class ImportViewModel(
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(isAnalyzing = true, message = "正在识别课程…") }
-            val result = withContext(Dispatchers.Default) {
+            _uiState.update { it.copy(isAnalyzing = true, message = "正在识别课程并比较本机课表…") }
+            val outcome = withContext(Dispatchers.Default) {
                 runCatching {
                     val page = BistuPageExtractor.decodeJavascriptResult(raw)
                     parser.parse(page)
                 }
+            }.getOrElse { error ->
+                _uiState.update {
+                    it.copy(
+                        isAnalyzing = false,
+                        message = "识别失败：${error.message ?: "页面结构暂不支持"}",
+                    )
+                }
+                return@launch
             }
-            result.onSuccess { outcome ->
-                if (outcome.lessons.isEmpty()) {
-                    _uiState.update {
-                        it.copy(
-                            isAnalyzing = false,
-                            message = outcome.warnings.firstOrNull() ?: "当前页面没有可导入课程。",
-                            warnings = outcome.warnings,
-                            pendingSchedule = null,
-                        )
-                    }
+
+            if (outcome.lessons.isEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        isAnalyzing = false,
+                        message = outcome.warnings.firstOrNull() ?: "当前页面没有可同步课程。",
+                        warnings = outcome.warnings,
+                        pendingSchedule = null,
+                        pendingDiff = null,
+                    )
+                }
+                return@launch
+            }
+
+            val schedule = outcome.toImportedSchedule()
+            val diffResult = withContext(Dispatchers.IO) {
+                runCatching { repository.previewImport(schedule) }
+            }
+            diffResult.onSuccess { diff ->
+                val summary = if (diff.hasChanges) {
+                    "已比较 ${schedule.lessons.size} 条安排，请核对同步变化"
                 } else {
-                    val schedule = outcome.toImportedSchedule()
-                    _uiState.update {
-                        it.copy(
-                            isAnalyzing = false,
-                            message = "识别到 ${schedule.lessons.size} 条上课安排",
-                            warnings = schedule.warnings,
-                            pendingSchedule = schedule,
-                        )
-                    }
+                    "本机教务课表已经是最新"
+                }
+                _uiState.update {
+                    it.copy(
+                        isAnalyzing = false,
+                        message = summary,
+                        warnings = schedule.warnings,
+                        pendingSchedule = schedule,
+                        pendingDiff = diff,
+                    )
                 }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isAnalyzing = false,
-                        message = "识别失败：${error.message ?: "页面结构暂不支持"}",
+                        message = "比较失败：${error.message ?: "无法读取本机课表"}",
                     )
                 }
             }
@@ -111,29 +135,42 @@ class ImportViewModel(
     }
 
     fun dismissPreview() {
-        _uiState.update { it.copy(pendingSchedule = null) }
+        _uiState.update { it.copy(pendingSchedule = null, pendingDiff = null) }
     }
 
     fun confirmImport() {
         val schedule = _uiState.value.pendingSchedule ?: return
+        val previewDiff = _uiState.value.pendingDiff ?: return
+        if (!previewDiff.hasChanges) {
+            _uiState.update {
+                it.copy(
+                    saved = true,
+                    message = "课表没有变化",
+                    pendingSchedule = null,
+                    pendingDiff = null,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
             runCatching {
-                withContext(Dispatchers.IO) { repository.replaceSchedule(schedule) }
+                withContext(Dispatchers.IO) { repository.applyImport(schedule) }
             }.onSuccess {
                 _uiState.update {
                     it.copy(
                         isSaving = false,
                         saved = true,
-                        message = "课表已保存到本机",
+                        message = "教务课表已同步，手动内容保持不变",
                         pendingSchedule = null,
+                        pendingDiff = null,
                     )
                 }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isSaving = false,
-                        message = "保存失败：${error.message ?: "未知错误"}",
+                        message = "同步失败：${error.message ?: "未知错误"}",
                     )
                 }
             }

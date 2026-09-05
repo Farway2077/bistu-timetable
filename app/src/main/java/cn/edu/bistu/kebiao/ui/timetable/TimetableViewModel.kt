@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import cn.edu.bistu.kebiao.data.ScheduleRepository
+import cn.edu.bistu.kebiao.domain.ScheduleException
 import cn.edu.bistu.kebiao.domain.ScheduledCourse
 import cn.edu.bistu.kebiao.domain.Semester
+import cn.edu.bistu.kebiao.domain.applyScheduleExceptionsForWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.max
@@ -21,11 +23,25 @@ data class TimetableUiState(
     val semester: Semester? = null,
     val selectedWeek: Int = 1,
     val courses: List<ScheduledCourse> = emptyList(),
+    val exceptions: List<ScheduleException> = emptyList(),
+    val canUndoLastImport: Boolean = false,
     val settingsError: String? = null,
 ) {
     val visibleCourses: List<ScheduledCourse>
-        get() = courses.filter { it.meeting.occursIn(selectedWeek) }
+        get() = coursesForWeek(selectedWeek)
+
+    fun coursesForWeek(week: Int): List<ScheduledCourse> {
+        val value = semester ?: return emptyList()
+        return applyScheduleExceptionsForWeek(value, courses, exceptions, week)
+    }
 }
+
+private data class ScheduleData(
+    val semester: Semester?,
+    val courses: List<ScheduledCourse>,
+    val exceptions: List<ScheduleException>,
+    val canUndoLastImport: Boolean,
+)
 
 class TimetableViewModel(
     private val repository: ScheduleRepository,
@@ -33,19 +49,29 @@ class TimetableViewModel(
     private val selectedWeek = MutableStateFlow<Int?>(null)
     private val settingsError = MutableStateFlow<String?>(null)
 
-    val uiState: StateFlow<TimetableUiState> = combine(
+    private val scheduleData = combine(
         repository.activeSemester,
         repository.scheduledCourses,
+        repository.scheduleExceptions,
+        repository.canUndoLastImport,
+    ) { semester, courses, exceptions, canUndo ->
+        ScheduleData(semester, courses, exceptions, canUndo)
+    }
+
+    val uiState: StateFlow<TimetableUiState> = combine(
+        scheduleData,
         selectedWeek,
         settingsError,
-    ) { semester, courses, requestedWeek, error ->
-        val thisWeek = semester?.let(::weekForToday) ?: 1
-        val week = (requestedWeek ?: thisWeek).coerceIn(1, semester?.totalWeeks ?: 20)
+    ) { data, requestedWeek, error ->
+        val thisWeek = data.semester?.let(::weekForToday) ?: 1
+        val week = (requestedWeek ?: thisWeek).coerceIn(1, data.semester?.totalWeeks ?: 20)
         TimetableUiState(
             isLoading = false,
-            semester = semester,
+            semester = data.semester,
             selectedWeek = week,
-            courses = courses,
+            courses = data.courses,
+            exceptions = data.exceptions,
+            canUndoLastImport = data.canUndoLastImport,
             settingsError = error,
         )
     }.stateIn(
@@ -86,6 +112,23 @@ class TimetableViewModel(
                 }
                 .onFailure { error ->
                     settingsError.value = error.message ?: "保存首周日期失败"
+                }
+        }
+    }
+
+    fun undoLastImport() {
+        val semesterId = uiState.value.semester?.id ?: return
+        viewModelScope.launch {
+            runCatching { repository.undoLastImport(semesterId) }
+                .onSuccess { restored ->
+                    settingsError.value = if (restored) {
+                        "已恢复到上次同步前；手动课程和临时调整保持不变"
+                    } else {
+                        "没有可以撤销的同步记录"
+                    }
+                }
+                .onFailure { error ->
+                    settingsError.value = error.message ?: "撤销同步失败"
                 }
         }
     }

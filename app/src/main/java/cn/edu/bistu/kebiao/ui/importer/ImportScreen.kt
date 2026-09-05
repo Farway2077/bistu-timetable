@@ -156,15 +156,35 @@ fun ImportScreen(
     }
 
     state.pendingSchedule?.let { schedule ->
+        val diff = state.pendingDiff
         val courseCount = schedule.lessons.map { it.courseName to it.teacher }.distinct().size
         AlertDialog(
             onDismissRequest = viewModel::dismissPreview,
-            title = { Text("确认导入课表") },
+            title = { Text("确认同步课表") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(schedule.semester.name, style = MaterialTheme.typography.titleMedium)
                     Text("识别到 $courseCount 门课程、${schedule.lessons.size} 条上课安排。")
                     Text("有效周次最高到第 ${schedule.semester.totalWeeks} 周。")
+                    if (diff != null && diff.hasChanges) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text("本次变化", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    "新增 ${diff.added.size} 条 · 修改 ${diff.changed.size} 条 · 移除 ${diff.removed.size} 条",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                if (diff.semesterMetadataChanged) {
+                                    Text("学期名称或总周数也将更新", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    } else if (diff != null) {
+                        Text("与本机教务课表一致，无需覆盖任何数据。")
+                    }
                     schedule.warnings.forEach { warning ->
                         Text("• $warning", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -183,7 +203,13 @@ fun ImportScreen(
             },
             confirmButton = {
                 Button(onClick = viewModel::confirmImport, enabled = !state.isSaving) {
-                    Text(if (state.isSaving) "保存中…" else "导入并替换本学期")
+                    Text(
+                        when {
+                            state.isSaving -> "同步中…"
+                            diff?.hasChanges == false -> "完成"
+                            else -> "确认同步"
+                        },
+                    )
                 }
             },
         )

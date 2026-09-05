@@ -132,6 +132,7 @@ private val fullWeekdays = listOf("星期一", "星期二", "星期三", "星期
 fun TimetableScreen(
     viewModel: TimetableViewModel,
     onImport: () -> Unit,
+    onManageSchedule: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
     val appContext = LocalContext.current.applicationContext
@@ -147,6 +148,8 @@ fun TimetableScreen(
         onNextWeek = viewModel::nextWeek,
         onThisWeek = viewModel::goToThisWeek,
         onImport = onImport,
+        onManageSchedule = onManageSchedule,
+        onUndoImport = viewModel::undoLastImport,
         onStartDateChange = viewModel::updateSemesterStartDate,
         cardTextSize = cardTextSize,
         onCardTextSizeChange = { newSize ->
@@ -161,7 +164,7 @@ fun TimetableScreen(
             confirmButton = {
                 TextButton(onClick = viewModel::dismissSettingsError) { Text("知道了") }
             },
-            title = { Text("首周日期未保存") },
+            title = { Text("课表提示") },
             text = { Text(message) },
         )
     }
@@ -175,6 +178,8 @@ private fun TimetableContent(
     onNextWeek: () -> Unit,
     onThisWeek: () -> Unit,
     onImport: () -> Unit,
+    onManageSchedule: () -> Unit,
+    onUndoImport: () -> Unit,
     onStartDateChange: (LocalDate) -> Unit,
     cardTextSize: CourseCardTextSize,
     onCardTextSizeChange: (CourseCardTextSize) -> Unit,
@@ -200,6 +205,8 @@ private fun TimetableContent(
                 onNextWeek = onNextWeek,
                 onThisWeek = onThisWeek,
                 onImport = onImport,
+                onManageSchedule = onManageSchedule,
+                onUndoImport = onUndoImport,
                 onStartDateChange = onStartDateChange,
                 cardTextSize = cardTextSize,
                 onCardTextSizeChange = onCardTextSizeChange,
@@ -298,6 +305,8 @@ private fun LoadedSchedule(
     onNextWeek: () -> Unit,
     onThisWeek: () -> Unit,
     onImport: () -> Unit,
+    onManageSchedule: () -> Unit,
+    onUndoImport: () -> Unit,
     onStartDateChange: (LocalDate) -> Unit,
     cardTextSize: CourseCardTextSize,
     onCardTextSizeChange: (CourseCardTextSize) -> Unit,
@@ -307,14 +316,20 @@ private fun LoadedSchedule(
     val semester = requireNotNull(state.semester)
     val liveNow = rememberCurrentMinute()
     val now = previewNow ?: liveNow
-    val todaySummary = remember(state.courses, semester, now) {
-        buildTodayScheduleSummary(state.courses, semester, now)
+    val todayCourses = remember(state.courses, state.exceptions, semester, now.toLocalDate()) {
+        teachingWeekForDate(semester, now.toLocalDate())
+            ?.let(state::coursesForWeek)
+            .orEmpty()
+    }
+    val todaySummary = remember(todayCourses, semester, now) {
+        buildTodayScheduleSummary(todayCourses, semester, now)
     }
     var viewModeName by rememberSaveable { mutableStateOf(initialMode.name) }
     val viewMode = TimetableViewMode.entries.firstOrNull { it.name == viewModeName } ?: TimetableViewMode.WEEK
     var selectedCourse by remember { mutableStateOf<ScheduledCourse?>(null) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showStartDatePicker by rememberSaveable { mutableStateOf(false) }
+    var showUndoConfirmation by rememberSaveable { mutableStateOf(false) }
     val displayedCourses = if (viewMode == TimetableViewMode.WEEK) state.visibleCourses else todaySummary.courses
     val conflictIds = remember(displayedCourses) { findConflicts(displayedCourses) }
 
@@ -370,6 +385,15 @@ private fun LoadedSchedule(
         TimetableSettingsDialog(
             semester = semester,
             cardTextSize = cardTextSize,
+            canUndoLastImport = state.canUndoLastImport,
+            onManageSchedule = {
+                showSettings = false
+                onManageSchedule()
+            },
+            onUndoImport = {
+                showSettings = false
+                showUndoConfirmation = true
+            },
             onStartDateClick = {
                 showSettings = false
                 showStartDatePicker = true
@@ -390,6 +414,25 @@ private fun LoadedSchedule(
                 onStartDateChange(date)
                 showStartDatePicker = false
                 showSettings = true
+            },
+        )
+    }
+
+    if (showUndoConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showUndoConfirmation = false },
+            title = { Text("撤销上次同步？") },
+            text = { Text("教务课程会恢复到同步前；手动课程、本地修正和临时调整不会受影响。") },
+            dismissButton = {
+                TextButton(onClick = { showUndoConfirmation = false }) { Text("取消") }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUndoConfirmation = false
+                        onUndoImport()
+                    },
+                ) { Text("确认撤销") }
             },
         )
     }
@@ -456,6 +499,9 @@ private fun ScheduleHeader(
 private fun TimetableSettingsDialog(
     semester: Semester,
     cardTextSize: CourseCardTextSize,
+    canUndoLastImport: Boolean,
+    onManageSchedule: () -> Unit,
+    onUndoImport: () -> Unit,
     onStartDateClick: () -> Unit,
     onCardTextSizeChange: (CourseCardTextSize) -> Unit,
     onDismiss: () -> Unit,
@@ -468,7 +514,56 @@ private fun TimetableSettingsDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
         title = { Text("课表设置") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("课程与同步", style = MaterialTheme.typography.labelLarge)
+                Surface(
+                    onClick = onManageSchedule,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("管理课程", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "手动添加、长期修正、停课与调课",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                        Text("打开", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                if (canUndoLastImport) {
+                    Surface(
+                        onClick = onUndoImport,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("撤销上次同步", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "只恢复教务课程，保留所有本地内容",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
+                            Text("撤销", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+
                 Text("第一周", style = MaterialTheme.typography.labelLarge)
                 Surface(
                     onClick = onStartDateClick,
@@ -773,12 +868,13 @@ private fun WeekScheduleBody(
         beyondBoundsPageCount = 1,
         key = { pageIndex -> "${semester.id}-$pageIndex" },
     ) { pageIndex ->
+        val displayedWeek = weekForPageIndex(pageIndex, totalWeeks)
         WeekPage(
             modifier = Modifier.fillMaxSize(),
             semester = semester,
-            displayedWeek = weekForPageIndex(pageIndex, totalWeeks),
+            displayedWeek = displayedWeek,
             todayWeek = todayWeek,
-            allCourses = state.courses,
+            visibleCourses = state.coursesForWeek(displayedWeek),
             cardTextSize = cardTextSize,
             onPreviousWeek = onPreviousWeek,
             onNextWeek = onNextWeek,
@@ -794,7 +890,7 @@ private fun WeekPage(
     semester: Semester,
     displayedWeek: Int,
     todayWeek: Int?,
-    allCourses: List<ScheduledCourse>,
+    visibleCourses: List<ScheduledCourse>,
     cardTextSize: CourseCardTextSize,
     onPreviousWeek: () -> Unit,
     onNextWeek: () -> Unit,
@@ -802,9 +898,6 @@ private fun WeekPage(
     onCourseClick: (ScheduledCourse) -> Unit,
 ) {
     val weekStart = semester.startDate.plusWeeks((displayedWeek - 1).toLong())
-    val visibleCourses = remember(allCourses, displayedWeek) {
-        allCourses.filter { it.meeting.occursIn(displayedWeek) }
-    }
     val conflictIds = remember(visibleCourses) { findConflicts(visibleCourses) }
 
     Column(modifier = modifier) {
@@ -1296,6 +1389,16 @@ private fun CourseDetailDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                when {
+                    scheduled.isDateException -> DetailLine(
+                        "状态",
+                        "临时调课" + scheduled.originalDate?.let { "（原 $it）" }.orEmpty(),
+                    )
+                    scheduled.isLocalOverride -> DetailLine("状态", "本地修正，后续同步会保留")
+                    scheduled.course.source == cn.edu.bistu.kebiao.domain.CourseSource.MANUAL -> {
+                        DetailLine("状态", "手动课程")
+                    }
+                }
                 DetailLine(
                     "时间",
                     "${fullWeekdays[scheduled.meeting.weekday - 1]}  第 ${scheduled.meeting.startPeriod}-${scheduled.meeting.endPeriod} 节",
@@ -1434,6 +1537,8 @@ private fun WeekTimetablePreview() {
             onNextWeek = {},
             onThisWeek = {},
             onImport = {},
+            onManageSchedule = {},
+            onUndoImport = {},
             onStartDateChange = {},
             cardTextSize = CourseCardTextSize.STANDARD,
             onCardTextSizeChange = {},
@@ -1456,6 +1561,8 @@ private fun TodayTimetableDarkPreview() {
             onNextWeek = {},
             onThisWeek = {},
             onImport = {},
+            onManageSchedule = {},
+            onUndoImport = {},
             onStartDateChange = {},
             cardTextSize = CourseCardTextSize.LARGE,
             onCardTextSizeChange = {},

@@ -6,6 +6,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import cn.edu.bistu.kebiao.data.ScheduleRepository
+import cn.edu.bistu.kebiao.ui.editor.ScheduleEditorScreen
+import cn.edu.bistu.kebiao.ui.editor.ScheduleEditorViewModel
 import cn.edu.bistu.kebiao.ui.importer.ImportScreen
 import cn.edu.bistu.kebiao.ui.importer.ImportViewModel
 import cn.edu.bistu.kebiao.ui.timetable.TimetableScreen
@@ -22,6 +24,7 @@ fun KebiaoApp(repository: ScheduleRepository) {
             TimetableScreen(
                 viewModel = viewModel,
                 onImport = { navController.navigate("import") },
+                onManageSchedule = { navController.navigate("schedule-editor") },
             )
         }
         composable("import") {
@@ -34,6 +37,14 @@ fun KebiaoApp(repository: ScheduleRepository) {
                 onImported = { navController.popBackStack() },
             )
         }
+        composable("schedule-editor") {
+            val viewModel: ScheduleEditorViewModel = viewModel(
+                factory = ScheduleEditorViewModel.factory(repository),
+            )
+            ScheduleEditorScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
     }
 }
-

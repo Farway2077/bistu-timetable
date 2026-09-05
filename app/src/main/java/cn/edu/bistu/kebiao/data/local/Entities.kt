@@ -33,6 +33,7 @@ data class CourseEntity(
     val name: String,
     val teacher: String,
     @ColumnInfo(name = "color_index") val colorIndex: Int,
+    @ColumnInfo(defaultValue = "'IMPORTED'") val source: String = "IMPORTED",
 )
 
 @Entity(
@@ -55,6 +56,7 @@ data class MeetingEntity(
     @ColumnInfo(name = "end_period") val endPeriod: Int,
     val room: String,
     @ColumnInfo(name = "weeks_csv") val weeksCsv: String,
+    @ColumnInfo(name = "source_key", defaultValue = "''") val sourceKey: String = "",
 )
 
 data class MeetingRow(
@@ -66,11 +68,13 @@ data class MeetingRow(
     @ColumnInfo(name = "course_name") val courseName: String,
     val teacher: String,
     @ColumnInfo(name = "color_index") val colorIndex: Int,
+    @ColumnInfo(name = "course_source") val courseSource: String,
     @ColumnInfo(name = "meeting_id") val meetingId: String,
     val weekday: Int,
     @ColumnInfo(name = "start_period") val startPeriod: Int,
     @ColumnInfo(name = "end_period") val endPeriod: Int,
     val room: String,
     @ColumnInfo(name = "weeks_csv") val weeksCsv: String,
+    @ColumnInfo(name = "source_key") val sourceKey: String,
 )
 

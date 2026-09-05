@@ -14,6 +14,7 @@ data class Course(
     val name: String,
     val teacher: String = "",
     val colorIndex: Int = 0,
+    val source: CourseSource = CourseSource.IMPORTED,
 )
 
 data class Meeting(
@@ -24,6 +25,7 @@ data class Meeting(
     val endPeriod: Int,
     val room: String = "",
     val weeks: Set<Int>,
+    val sourceKey: String = id,
 ) {
     init {
         require(weekday in 1..7) { "weekday must be in 1..7" }
@@ -38,6 +40,9 @@ data class ScheduledCourse(
     val semester: Semester,
     val course: Course,
     val meeting: Meeting,
+    val isLocalOverride: Boolean = false,
+    val isDateException: Boolean = false,
+    val originalDate: LocalDate? = null,
 )
 
 data class ImportedLesson(
